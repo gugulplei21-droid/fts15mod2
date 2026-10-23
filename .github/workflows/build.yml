@@ -54,11 +54,20 @@ jobs:
 
       - name: Compilar mi libreria
         run: |
-          cp Dobby/include/dobby.h .
+          echo "=== Archivos en el repositorio ==="
+          ls -la
+          SRC=$(find . -iname "modmenu.cpp" -not -path "./Dobby*" -not -path "./DobbySrc*" | head -n1)
+          if [ -z "$SRC" ]; then
+            echo "ERROR: no existe modmenu.cpp en el repositorio"
+            exit 1
+          fi
+          DIR=$(dirname "$SRC")
+          echo "Usando: $SRC"
+          cp Dobby/include/dobby.h "$DIR/"
           LIBS=$(find Dobby/build -name "*.a" | tr '\n' ' ')
           CXX=${{ steps.ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang++
           $CXX -shared -fPIC -std=c++17 -O2 -fvisibility=hidden -static-libstdc++ \
-            modmenu.cpp -Wl,--start-group $LIBS -Wl,--end-group -llog -ldl -o libmodmenu.so
+            -I"$DIR" "$SRC" -Wl,--start-group $LIBS -Wl,--end-group -llog -ldl -o libmodmenu.so
           ls -l libmodmenu.so
 
       - name: Bajar el APK original
