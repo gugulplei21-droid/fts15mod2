@@ -54,20 +54,21 @@ jobs:
 
       - name: Compilar mi libreria
         run: |
-          echo "=== Archivos en el repositorio ==="
-          ls -la
+          echo "=== Archivos del mod encontrados ==="
+          find . \( -iname "modmenu.cpp" -o -iname "modmenu.h" -o -iname "inject.py" \) \
+            -not -path "./Dobby*" -not -path "./DobbySrc*"
           SRC=$(find . -iname "modmenu.cpp" -not -path "./Dobby*" -not -path "./DobbySrc*" | head -n1)
-          if [ -z "$SRC" ]; then
-            echo "ERROR: no existe modmenu.cpp en el repositorio"
-            exit 1
-          fi
-          DIR=$(dirname "$SRC")
-          echo "Usando: $SRC"
-          cp Dobby/include/dobby.h "$DIR/"
+          HDR=$(find . -iname "modmenu.h" -not -path "./Dobby*" -not -path "./DobbySrc*" | head -n1)
+          if [ -z "$SRC" ]; then echo "ERROR: falta modmenu.cpp"; exit 1; fi
+          if [ -z "$HDR" ]; then echo "ERROR: falta modmenu.h"; exit 1; fi
+          SRCDIR=$(dirname "$SRC")
+          HDRDIR=$(dirname "$HDR")
+          echo "Usando: $SRC y $HDR"
+          cp Dobby/include/dobby.h "$SRCDIR/"
           LIBS=$(find Dobby/build -name "*.a" | tr '\n' ' ')
           CXX=${{ steps.ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang++
           $CXX -shared -fPIC -std=c++17 -O2 -fvisibility=hidden -static-libstdc++ \
-            -I"$DIR" "$SRC" -Wl,--start-group $LIBS -Wl,--end-group -llog -ldl -o libmodmenu.so
+            -I"$SRCDIR" -I"$HDRDIR" "$SRC" -Wl,--start-group $LIBS -Wl,--end-group -llog -ldl -o libmodmenu.so
           ls -l libmodmenu.so
 
       - name: Bajar el APK original
@@ -84,10 +85,12 @@ jobs:
 
       - name: Meter el mod dentro del APK
         run: |
+          INJ=$(find . -name "inject.py" -not -path "./Dobby*" -not -path "./DobbySrc*" | head -n1)
+          if [ -z "$INJ" ]; then echo "ERROR: falta inject.py"; exit 1; fi
           java -jar apktool.jar d original.apk -o out -f
           mkdir -p out/lib/arm64-v8a
           cp libmodmenu.so out/lib/arm64-v8a/
-          python3 inject.py
+          python3 "$INJ"
 
       - name: Reconstruir y firmar
         run: |
