@@ -22,11 +22,23 @@ jobs:
           git checkout $(git rev-list -n 1 --before="2023-12-31" HEAD)
           git log -1 --format="Usando Dobby de: %h %cd"
           cd ..
+
+          echo "=== ANTES del parche ==="
+          grep -rn "PAGE" Dobby/source --include=*.asm || true
+
+          # Cambiar sintaxis de Apple (@PAGE) por la de Android (ELF)
+          for f in $(find Dobby/source -name "*.asm"); do
+            sed -i -E 's/([A-Za-z0-9_()]+)@PAGEOFF/:lo12:\1/g; s/([A-Za-z0-9_()]+)@PAGE/\1/g' "$f"
+          done
+
+          echo "=== DESPUES del parche ==="
+          grep -rn "adrp\|lo12" Dobby/source --include=*.asm || true
+
           cmake -S Dobby -B Dobby/build \
             -DCMAKE_TOOLCHAIN_FILE=${{ steps.ndk.outputs.ndk-path }}/build/cmake/android.toolchain.cmake \
             -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-24 \
             -DCMAKE_BUILD_TYPE=Release
-          cmake --build Dobby/build --target dobby_static -j4 || cmake --build Dobby/build -j4
+          cmake --build Dobby/build --target dobby_static -j4
           find Dobby/build -name "*.a"
 
       - name: Compilar mi libreria
