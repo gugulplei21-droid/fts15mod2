@@ -15,30 +15,41 @@ jobs:
         with:
           ndk-version: r26d
 
-      - name: Compilar Dobby (version antigua estable)
+      - name: Compilar Dobby (probando versiones)
         run: |
-          git clone https://github.com/jmpews/Dobby.git
-          cd Dobby
-          git checkout $(git rev-list -n 1 --before="2023-12-31" HEAD)
-          git log -1 --format="Usando Dobby de: %h %cd"
-          cd ..
+          NDK=${{ steps.ndk.outputs.ndk-path }}
+          git clone https://github.com/jmpews/Dobby.git DobbySrc
+          OK=0
+          for D in 2022-12-31 2022-06-30 2023-06-30 2021-12-31; do
+            echo "##### Probando Dobby de $D #####"
+            rm -rf Dobby
+            cp -r DobbySrc Dobby
+            COMMIT=$(git -C Dobby rev-list -n 1 --before="$D" HEAD)
+            if [ -z "$COMMIT" ]; then echo "Sin commit para $D"; continue; fi
+            git -C Dobby checkout -q -f "$COMMIT"
+            git -C Dobby log -1 --format="Version: %h  fecha: %cd"
 
-          echo "=== ANTES del parche ==="
-          grep -rn "PAGE" Dobby/source --include=*.asm || true
+            # Cambiar sintaxis de Apple (@PAGE) por la de Android
+            for f in $(find Dobby/source -name "*.asm"); do
+              sed -i -E 's/([A-Za-z0-9_()]+)@PAGEOFF/:lo12:\1/g; s/([A-Za-z0-9_()]+)@PAGE/\1/g' "$f"
+            done
 
-          # Cambiar sintaxis de Apple (@PAGE) por la de Android (ELF)
-          for f in $(find Dobby/source -name "*.asm"); do
-            sed -i -E 's/([A-Za-z0-9_()]+)@PAGEOFF/:lo12:\1/g; s/([A-Za-z0-9_()]+)@PAGE/\1/g' "$f"
+            if cmake -S Dobby -B Dobby/build \
+                 -DCMAKE_TOOLCHAIN_FILE=$NDK/build/cmake/android.toolchain.cmake \
+                 -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-24 \
+                 -DCMAKE_BUILD_TYPE=Release -DDOBBY_GENERATE_SHARED=OFF \
+              && { cmake --build Dobby/build --target dobby_static -j4 \
+                   || cmake --build Dobby/build -j4; }; then
+              OK=1
+              echo "##### FUNCIONO con la fecha $D #####"
+              break
+            fi
+            echo "##### Fallo con $D, probando la siguiente #####"
           done
-
-          echo "=== DESPUES del parche ==="
-          grep -rn "adrp\|lo12" Dobby/source --include=*.asm || true
-
-          cmake -S Dobby -B Dobby/build \
-            -DCMAKE_TOOLCHAIN_FILE=${{ steps.ndk.outputs.ndk-path }}/build/cmake/android.toolchain.cmake \
-            -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-24 \
-            -DCMAKE_BUILD_TYPE=Release
-          cmake --build Dobby/build --target dobby_static -j4
+          if [ "$OK" != "1" ]; then
+            echo "Ninguna version de Dobby compilo"
+            exit 1
+          fi
           find Dobby/build -name "*.a"
 
       - name: Compilar mi libreria
