@@ -89,7 +89,7 @@ bool InstallHook(const char* name, uintptr_t offset, void* repl, void** orig) {
     if (!base) { LOGE("[%s] base de %s no encontrada", name, TARGET_LIB); return false; }
     void* target = (void*)(base + offset);
     if (!IsReadable(target, 4)) { LOGE("[%s] target %p invalido", name, target); return false; }
-    int rc = DobbyHook(target, repl, orig);
+        int rc = ((int(*)(void*, void*, void**))&DobbyHook)(target, repl, orig);
     if (rc == 0 && *orig) LOGI("[%s] hook OK @ %p (base+0x%lx)", name, target, (unsigned long)offset);
     else LOGE("[%s] DobbyHook fallo rc=%d", name, rc);
     return rc == 0 && *orig;
