@@ -57,18 +57,35 @@ jobs:
           echo "=== Archivos del mod encontrados ==="
           find . \( -iname "modmenu.cpp" -o -iname "modmenu.h" -o -iname "inject.py" \) \
             -not -path "./Dobby*" -not -path "./DobbySrc*"
-          SRC=$(find . -iname "modmenu.cpp" -not -path "./Dobby*" -not -path "./DobbySrc*" | head -n1)
+
           HDR=$(find . -iname "modmenu.h" -not -path "./Dobby*" -not -path "./DobbySrc*" | head -n1)
-          if [ -z "$SRC" ]; then echo "ERROR: falta modmenu.cpp"; exit 1; fi
           if [ -z "$HDR" ]; then echo "ERROR: falta modmenu.h"; exit 1; fi
-          SRCDIR=$(dirname "$SRC")
           HDRDIR=$(dirname "$HDR")
+
+          # Usar el modmenu.cpp que esta junto a modmenu.h; si no, cualquiera
+          if [ -f "$HDRDIR/modmenu.cpp" ]; then
+            SRC="$HDRDIR/modmenu.cpp"
+          else
+            SRC=$(find . -iname "modmenu.cpp" -not -path "./Dobby*" -not -path "./DobbySrc*" | head -n1)
+          fi
+          if [ -z "$SRC" ]; then echo "ERROR: falta modmenu.cpp"; exit 1; fi
           echo "Usando: $SRC y $HDR"
-          cp Dobby/include/dobby.h "$SRCDIR/"
+
+          # Copiar todo a una carpeta limpia
+          mkdir modsrc
+          cp "$SRC" modsrc/modmenu.cpp
+          cp "$HDR" modsrc/modmenu.h
+          cp Dobby/include/dobby.h modsrc/
+
+          # Arreglar la llamada a DobbyHook automaticamente
+          sed -i 's/DobbyHook(target, repl, orig)/((int(*)(void*, void*, void**))\&DobbyHook)(target, repl, orig)/' modsrc/modmenu.cpp
+          echo "=== Linea de DobbyHook en el codigo ==="
+          grep -n "DobbyHook" modsrc/modmenu.cpp
+
           LIBS=$(find Dobby/build -name "*.a" | tr '\n' ' ')
           CXX=${{ steps.ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang++
           $CXX -shared -fPIC -std=c++17 -O2 -fvisibility=hidden -static-libstdc++ \
-            -I"$SRCDIR" -I"$HDRDIR" "$SRC" -Wl,--start-group $LIBS -Wl,--end-group -llog -ldl -o libmodmenu.so
+            -Imodsrc modsrc/modmenu.cpp -Wl,--start-group $LIBS -Wl,--end-group -llog -ldl -o libmodmenu.so
           ls -l libmodmenu.so
 
       - name: Bajar el APK original
@@ -85,8 +102,9 @@ jobs:
 
       - name: Meter el mod dentro del APK
         run: |
-          INJ=$(find . -name "inject.py" -not -path "./Dobby*" -not -path "./DobbySrc*" | head -n1)
+          INJ=$(find . -iname "inject.py" -not -path "./Dobby*" -not -path "./DobbySrc*" | head -n1)
           if [ -z "$INJ" ]; then echo "ERROR: falta inject.py"; exit 1; fi
+          echo "Usando: $INJ"
           java -jar apktool.jar d original.apk -o out -f
           mkdir -p out/lib/arm64-v8a
           cp libmodmenu.so out/lib/arm64-v8a/
